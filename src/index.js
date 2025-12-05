@@ -1,10 +1,18 @@
-import '@tensorflow/tfjs';
+import * as tf from '@tensorflow/tfjs';
 import * as cocoSsd from '@tensorflow-models/coco-ssd';
 
 const CONFIG = {
-  inferenceSize: 512,
-  targetWidth: 3840,
-  targetHeight: 2160
+  inferenceSize: 512
+};
+
+const RESOLUTION_PRESETS = {
+  uhd: { width: 3840, height: 2160, label: '4K (3840 x 2160)' },
+  fullhd: { width: 1920, height: 1080, label: 'フルHD (1920 x 1080)' },
+  hd: { width: 1280, height: 720, label: 'HD (1280 x 720)' }
+};
+const BACKEND_LABELS = {
+  webgl: 'WebGL (GPU優先)',
+  cpu: 'CPU'
 };
 
 const videoEl = document.getElementById('preview-video');
@@ -16,6 +24,9 @@ const debugToggleBtn = document.getElementById('debug-toggle');
 const debugPanel = document.getElementById('debug-panel');
 const fpsLabel = document.getElementById('fps-label');
 const memoryLabel = document.getElementById('memory-label');
+const resolutionSelect = document.getElementById('resolution-select');
+const backendSelect = document.getElementById('backend-select');
+const statusContainer = statusEl.parentElement;
 
 const inferenceCanvas = new OffscreenCanvas(CONFIG.inferenceSize, CONFIG.inferenceSize);
 const inferenceCtx = inferenceCanvas.getContext('2d', { willReadFrequently: true });
@@ -32,42 +43,103 @@ let lastFrameTimestamp = 0;
 let lastDebugUpdate = 0;
 const fpsSamples = [];
 const FPS_SAMPLE_COUNT = 30;
+let activeStream = null;
+let setupInProgress = false;
+let loopStarted = false;
 
-async function initCamera() {
-  try {
-    statusEl.parentElement.classList.remove('hidden');
-    statusEl.textContent = 'モデル読み込み中...';
+function getSelectedResolution() {
+  return RESOLUTION_PRESETS[resolutionSelect.value] ?? RESOLUTION_PRESETS.uhd;
+}
 
-    const [loadedModel, stream] = await Promise.all([
-      cocoSsd.load(),
-      navigator.mediaDevices.getUserMedia({
-        audio: false,
-        video: {
-          width: { ideal: CONFIG.targetWidth },
-          height: { ideal: CONFIG.targetHeight },
-          facingMode: 'environment'
-        }
-      })
-    ]);
+function getSelectedBackendLabel() {
+  return BACKEND_LABELS[backendSelect.value] ?? backendSelect.value;
+}
 
-    model = loadedModel;
-    videoEl.srcObject = stream;
+function setControlsEnabled(enabled) {
+  resolutionSelect.disabled = !enabled;
+  backendSelect.disabled = !enabled;
+}
 
+function stopActiveStream() {
+  if (!activeStream) return;
+  activeStream.getTracks().forEach(track => track.stop());
+  activeStream = null;
+}
+
+async function prepareModel() {
+  const selectedBackend = backendSelect.value;
+  if (model) {
+    model.dispose?.();
+    model = null;
+  }
+  latestPredictions = [];
+  isDetecting = false;
+
+  statusEl.textContent = `モデル読み込み中...（${getSelectedBackendLabel()}）`;
+  await tf.setBackend(selectedBackend);
+  await tf.ready();
+  model = await cocoSsd.load();
+}
+
+async function startCamera() {
+  const { width, height, label } = getSelectedResolution();
+  stopActiveStream();
+  latestPredictions = [];
+  isDetecting = false;
+
+  statusEl.textContent = `カメラ準備中...（${label}）`;
+
+  const stream = await navigator.mediaDevices.getUserMedia({
+    audio: false,
+    video: {
+      width: { ideal: width },
+      height: { ideal: height },
+      facingMode: 'environment'
+    }
+  });
+
+  activeStream = stream;
+  videoEl.srcObject = stream;
+
+  await new Promise(resolve => {
     videoEl.onloadedmetadata = () => {
-      const { width, height } = stream.getVideoTracks()[0].getSettings();
-      console.log('Camera:', width, 'x', height);
+      const { width: actualWidth, height: actualHeight } = stream.getVideoTracks()[0].getSettings();
+      console.log('Camera:', actualWidth, 'x', actualHeight, 'backend:', backendSelect.value);
 
-      videoAspect = videoEl.videoWidth / videoEl.videoHeight;
+      if (videoEl.videoWidth && videoEl.videoHeight) {
+        videoAspect = videoEl.videoWidth / videoEl.videoHeight;
+      } else {
+        videoAspect = width / height;
+      }
       resizeOverlay();
-
-      statusEl.parentElement.classList.add('hidden');
-      requestAnimationFrame(mainLoop);
+      resolve();
     };
+  });
+}
 
-    window.addEventListener('resize', resizeOverlay);
+async function applySettings({ reloadBackend = false } = {}) {
+  if (setupInProgress) return;
+  setupInProgress = true;
+  setControlsEnabled(false);
+  statusContainer.classList.remove('hidden');
+
+  try {
+    if (reloadBackend || !model) {
+      await prepareModel();
+    }
+    await startCamera();
+
+    statusContainer.classList.add('hidden');
+    if (!loopStarted) {
+      loopStarted = true;
+      requestAnimationFrame(mainLoop);
+    }
   } catch (err) {
     console.error('Error:', err);
     statusEl.textContent = 'エラー: ' + err.message;
+  } finally {
+    setupInProgress = false;
+    setControlsEnabled(true);
   }
 }
 
@@ -139,7 +211,7 @@ function drawOverlay() {
 captureBtn.addEventListener('click', async () => {
   if (videoEl.readyState < videoEl.HAVE_CURRENT_DATA) return;
 
-  statusEl.parentElement.classList.remove('hidden');
+  statusContainer.classList.remove('hidden');
   statusEl.textContent = '撮影処理中...';
 
   captureCanvas.width = videoEl.videoWidth;
@@ -156,7 +228,7 @@ captureBtn.addEventListener('click', async () => {
   URL.revokeObjectURL(url);
 
   statusEl.textContent = `保存完了: ${captureCanvas.width}x${captureCanvas.height}`;
-  setTimeout(() => statusEl.parentElement.classList.add('hidden'), 2000);
+  setTimeout(() => statusContainer.classList.add('hidden'), 2000);
 });
 
 function updateDebugStats(now) {
@@ -201,4 +273,8 @@ debugToggleBtn.addEventListener('click', () => {
   }
 });
 
-initCamera();
+resolutionSelect.addEventListener('change', () => applySettings({ reloadBackend: false }));
+backendSelect.addEventListener('change', () => applySettings({ reloadBackend: true }));
+window.addEventListener('resize', resizeOverlay);
+
+applySettings({ reloadBackend: true });

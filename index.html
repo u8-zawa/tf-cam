@@ -21,8 +21,34 @@
         <p id="status" class="text-lg font-semibold">初期化中...</p>
     </div>
 
-    <!-- デバッグ表示 -->
-    <div class="absolute top-4 right-4 flex flex-col items-end gap-2 text-sm">
+    <!-- シャッターボタン -->
+    <button id="shutter-btn" class="absolute bottom-[3vh] left-1/2 -translate-x-1/2 
+                   w-16 h-16 bg-white rounded-full border-4 border-gray-300
+                   hover:bg-gray-100 active:scale-95 transition-transform">
+    </button>
+
+    <!-- 設定パネル -->
+    <div class="fixed top-4 left-4 w-[280px] md:w-[320px] max-w-[92vw] bg-black/70 backdrop-blur-sm text-sm rounded-lg shadow-lg p-4 space-y-3">
+        <div class="space-y-1">
+            <label for="resolution-select" class="block text-xs text-gray-200">撮影解像度</label>
+            <select id="resolution-select" class="w-full bg-white/90 text-black rounded px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+                <option value="uhd">4K (3840 x 2160)</option>
+                <option value="fullhd">フルHD (1920 x 1080)</option>
+                <option value="hd">HD (1280 x 720)</option>
+            </select>
+        </div>
+        <div class="space-y-1">
+            <label for="backend-select" class="block text-xs text-gray-200">推論バックエンド</label>
+            <select id="backend-select" class="w-full bg-white/90 text-black rounded px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+                <option value="webgl">WebGL (GPU優先)</option>
+                <option value="cpu">CPU</option>
+            </select>
+        </div>
+        <p class="text-[11px] text-gray-300 leading-relaxed">解像度はカメラを再接続、バックエンドはモデルを再読込します。切り替え後はステータスが隠れるまでお待ちください。</p>
+    </div>
+
+    <!-- デバッグ表示（小画面では下部、md以上で右上） -->
+    <div class="fixed right-4 bottom-[96px] md:bottom-auto md:top-4 flex flex-col items-end gap-2 text-sm">
         <button id="debug-toggle" class="px-3 py-2 bg-white/80 text-black rounded-md shadow hover:bg-white active:scale-95 transition">
             デバッグ表示 ON
         </button>
@@ -31,12 +57,6 @@
             <p id="memory-label">メモリ: --</p>
         </div>
     </div>
-
-    <!-- シャッターボタン -->
-    <button id="shutter-btn" class="absolute bottom-[3vh] left-1/2 -translate-x-1/2 
-                   w-16 h-16 bg-white rounded-full border-4 border-gray-300
-                   hover:bg-gray-100 active:scale-95 transition-transform">
-    </button>
 
     <!-- 推論結果オーバーレイ用キャンバス -->
     <canvas id="overlay-canvas" class="absolute pointer-events-none"></canvas>
