@@ -12,6 +12,10 @@ const statusEl = document.getElementById('status');
 const captureBtn = document.getElementById('shutter-btn');
 const overlayCanvas = document.getElementById('overlay-canvas');
 const overlayCtx = overlayCanvas.getContext('2d');
+const debugToggleBtn = document.getElementById('debug-toggle');
+const debugPanel = document.getElementById('debug-panel');
+const fpsLabel = document.getElementById('fps-label');
+const memoryLabel = document.getElementById('memory-label');
 
 const inferenceCanvas = new OffscreenCanvas(CONFIG.inferenceSize, CONFIG.inferenceSize);
 const inferenceCtx = inferenceCanvas.getContext('2d', { willReadFrequently: true });
@@ -23,6 +27,11 @@ let model = null;
 let isDetecting = false;
 let latestPredictions = [];
 let videoAspect = 1;
+let debugEnabled = false;
+let lastFrameTimestamp = 0;
+let lastDebugUpdate = 0;
+const fpsSamples = [];
+const FPS_SAMPLE_COUNT = 30;
 
 async function initCamera() {
   try {
@@ -75,13 +84,14 @@ function resizeOverlay() {
   overlayCanvas.style.top = `${(window.innerHeight - overlayCanvas.height) / 2}px`;
 }
 
-function mainLoop() {
+function mainLoop(now) {
   if (videoEl.readyState >= videoEl.HAVE_CURRENT_DATA) {
     if (model && !isDetecting) {
       isDetecting = true;
       runInference();
     }
     drawOverlay();
+    if (debugEnabled) updateDebugStats(now || performance.now());
   }
   requestAnimationFrame(mainLoop);
 }
@@ -147,6 +157,48 @@ captureBtn.addEventListener('click', async () => {
 
   statusEl.textContent = `保存完了: ${captureCanvas.width}x${captureCanvas.height}`;
   setTimeout(() => statusEl.parentElement.classList.add('hidden'), 2000);
+});
+
+function updateDebugStats(now) {
+  if (lastFrameTimestamp) {
+    const delta = now - lastFrameTimestamp;
+    if (delta > 0) {
+      fpsSamples.push(1000 / delta);
+      if (fpsSamples.length > FPS_SAMPLE_COUNT) fpsSamples.shift();
+    }
+  }
+  lastFrameTimestamp = now;
+
+  if (now - lastDebugUpdate < 250) return;
+  lastDebugUpdate = now;
+
+  const fps = fpsSamples.length
+    ? fpsSamples.reduce((sum, value) => sum + value, 0) / fpsSamples.length
+    : 0;
+  fpsLabel.textContent = `FPS: ${fps.toFixed(1)}`;
+
+  const mem = performance.memory;
+  if (mem && mem.usedJSHeapSize && mem.jsHeapSizeLimit) {
+    const used = mem.usedJSHeapSize / 1048576;
+    const limit = mem.jsHeapSizeLimit / 1048576;
+    memoryLabel.textContent = `メモリ: ${used.toFixed(1)}MB / ${limit.toFixed(0)}MB`;
+  } else {
+    memoryLabel.textContent = 'メモリ: 未対応';
+  }
+}
+
+debugToggleBtn.addEventListener('click', () => {
+  debugEnabled = !debugEnabled;
+  debugPanel.classList.toggle('hidden', !debugEnabled);
+  debugToggleBtn.textContent = debugEnabled ? 'デバッグ表示 OFF' : 'デバッグ表示 ON';
+
+  if (!debugEnabled) {
+    fpsSamples.length = 0;
+    lastFrameTimestamp = 0;
+    lastDebugUpdate = 0;
+    fpsLabel.textContent = 'FPS: --';
+    memoryLabel.textContent = 'メモリ: --';
+  }
 });
 
 initCamera();
