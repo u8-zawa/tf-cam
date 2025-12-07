@@ -16,6 +16,10 @@ const AUTO_CAPTURE_CONFIG = {
   requiredMs: 1500
 };
 
+// 推論を間引く間隔（ms）
+// 16ms = 60fps なので「80〜120ms 程度」が体感と負荷のバランスが良い
+const DETECTION_INTERVAL_MS = 100;
+
 const videoEl = document.getElementById('preview-video');
 const statusEl = document.getElementById('status');
 const captureBtn = document.getElementById('shutter-btn');
@@ -33,186 +37,42 @@ let model = null;
 let isDetecting = false;
 let latestPredictions = [];
 let videoAspect = 1;
-
 let alignStartTime = null;
 let autoCapturing = false;
+let lastDetectionTime = 0;
+let guideRectOnCanvas = null;
+const statusState = {
+  visible: false,
+  text: ''
+};
 
-async function loadTfliteModel() {
-  console.log('loading tflite model:', TFLITE_MODEL_URL);
+function showStatus(text) {
+  if (!statusEl) return;
 
-  await tf.setBackend('webgl');
-  await tf.ready();
+  const wrapper = statusEl.parentElement;
+  if (!wrapper) return;
 
-  const net = await tflite.loadTFLiteModel(TFLITE_MODEL_URL);
+  // 同じテキストなら何もしない
+  if (statusState.visible && statusState.text === text) return;
 
-  tf.tidy(() => {
-    const dummy = tf.ones(
-      [1, CONFIG.inferenceSize, CONFIG.inferenceSize, 3],
-      'int32'
-    );
-    net.predict(dummy);
-  });
+  statusState.visible = true;
+  statusState.text = text;
 
-  console.log('tflite model loaded');
-  return net;
+  wrapper.classList.remove('hidden');
+  statusEl.textContent = text;
 }
 
-async function initCamera() {
-  try {
-    statusEl.parentElement.classList.remove('hidden');
-    statusEl.textContent = 'モデル読み込み中...';
+function hideStatus() {
+  if (!statusEl) return;
+  const wrapper = statusEl.parentElement;
+  if (!wrapper) return;
 
-    const [loadedModel, stream] = await Promise.all([
-      loadTfliteModel(),
-      navigator.mediaDevices.getUserMedia({
-        audio: false,
-        video: {
-          width: { ideal: CONFIG.targetWidth },
-          height: { ideal: CONFIG.targetHeight },
-          facingMode: 'environment'
-        }
-      })
-    ]);
+  if (!statusState.visible) return;
 
-    model = loadedModel;
-    videoEl.srcObject = stream;
+  statusState.visible = false;
+  statusState.text = '';
 
-    videoEl.onloadedmetadata = () => {
-      const { width, height } = stream.getVideoTracks()[0].getSettings();
-      console.log('Camera:', width, 'x', height);
-
-      videoAspect = videoEl.videoWidth / videoEl.videoHeight;
-      resizeOverlay();
-
-      statusEl.parentElement.classList.add('hidden');
-      requestAnimationFrame(mainLoop);
-    };
-
-    window.addEventListener('resize', resizeOverlay);
-  } catch (err) {
-    console.error('Error:', err);
-    statusEl.textContent = 'エラー: ' + err.message;
-  }
-}
-
-function resizeOverlay() {
-  const containerAspect = window.innerWidth / window.innerHeight;
-  if (containerAspect > videoAspect) {
-    overlayCanvas.width = window.innerWidth;
-    overlayCanvas.height = window.innerWidth / videoAspect;
-  } else {
-    overlayCanvas.height = window.innerHeight;
-    overlayCanvas.width = window.innerHeight * videoAspect;
-  }
-  overlayCanvas.style.left = `${(window.innerWidth - overlayCanvas.width) / 2}px`;
-  overlayCanvas.style.top = `${(window.innerHeight - overlayCanvas.height) / 2}px`;
-}
-
-function mainLoop() {
-  if (videoEl.readyState >= videoEl.HAVE_CURRENT_DATA) {
-    if (model && !isDetecting) {
-      isDetecting = true;
-      runInference();
-    }
-    drawOverlay();
-  }
-  requestAnimationFrame(mainLoop);
-}
-
-function runTfliteDetection(net, sourceCanvas) {
-  return tf.tidy(() => {
-    const input = tf.browser
-      .fromPixels(sourceCanvas)                            // [H, W, 3]
-      .resizeBilinear([CONFIG.inferenceSize, CONFIG.inferenceSize])
-      .expandDims(0)                                       // [1, 192, 192, 3]
-      .toInt();                                            // 多くの TFLite OD モデルは int32/uint8
-
-    const res = net.predict(input);
-
-    const boxes = res['TFLite_Detection_PostProcess'].arraySync()[0];       // [N, 4]
-    const scores = res['TFLite_Detection_PostProcess:2'].arraySync()[0];    // [N]
-    const classes = res['TFLite_Detection_PostProcess:1'].arraySync()[0];   // [N]
-    const numDetections = res['TFLite_Detection_PostProcess:3'].arraySync()[0]; // [1] -> scalar
-
-    const preds = [];
-
-    for (let i = 0; i < numDetections; i++) {
-      const score = scores[i];
-      if (score < 0.7) continue;
-
-      const [ymin, xmin, ymax, xmax] = boxes[i];
-
-      const x = xmin * CONFIG.inferenceSize;
-      const y = ymin * CONFIG.inferenceSize;
-      const w = (xmax - xmin) * CONFIG.inferenceSize;
-      const h = (ymax - ymin) * CONFIG.inferenceSize;
-
-      preds.push({
-        bbox: [x, y, w, h],
-        class: `cls_${classes[i]}`,
-        score
-      });
-    }
-
-    return preds;
-  });
-}
-
-async function runInference() {
-  inferenceCtx.drawImage(videoEl, 0, 0, CONFIG.inferenceSize, CONFIG.inferenceSize);
-
-  try {
-    latestPredictions = runTfliteDetection(model, inferenceCanvas);
-    checkAutoCapture();
-  } catch (e) {
-    console.error('Inference Error:', e);
-  }
-  isDetecting = false;
-}
-
-function drawOverlay() {
-  overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-  if (!latestPredictions.length) return;
-
-  const scaleX = overlayCanvas.width / CONFIG.inferenceSize;
-  const scaleY = overlayCanvas.height / CONFIG.inferenceSize;
-
-  overlayCtx.strokeStyle = '#00FFFF';
-  overlayCtx.fillStyle = '#00FFFF';
-  overlayCtx.lineWidth = 2;
-  overlayCtx.font = '16px sans-serif';
-
-  for (const { bbox, class: cls, score } of latestPredictions) {
-    const [x, y, w, h] = bbox;
-    const sx = x * scaleX, sy = y * scaleY, sw = w * scaleX, sh = h * scaleY;
-
-    overlayCtx.strokeRect(sx, sy, sw, sh);
-
-    const text = `${cls} (${Math.round(score * 100)}%)`;
-    const tw = overlayCtx.measureText(text).width + 8;
-    const ty = sy > 20 ? sy - 20 : sy;
-
-    overlayCtx.fillRect(sx, ty, tw, 20);
-    overlayCtx.fillStyle = '#000';
-    overlayCtx.fillText(text, sx + 4, ty + 14);
-    overlayCtx.fillStyle = '#00FFFF';
-  }
-}
-
-function getGuideRectOnCanvas() {
-  if (!cardGuideEl) return null;
-
-  const guideRect = cardGuideEl.getBoundingClientRect();
-  const canvasRect = overlayCanvas.getBoundingClientRect();
-
-  const x = guideRect.left - canvasRect.left;
-  const y = guideRect.top - canvasRect.top;
-  const w = guideRect.width;
-  const h = guideRect.height;
-
-  if (w <= 0 || h <= 0) return null;
-
-  return { x, y, w, h };
+  wrapper.classList.add('hidden');
 }
 
 function rectIoU(a, b) {
@@ -239,16 +99,232 @@ function rectIoU(a, b) {
   return union > 0 ? inter / union : 0;
 }
 
+async function loadTfliteModel() {
+  console.log('loading tflite model:', TFLITE_MODEL_URL);
+
+  await tf.setBackend('webgl');
+  await tf.ready();
+
+  const net = await tflite.loadTFLiteModel(TFLITE_MODEL_URL);
+
+  // 1回だけウォームアップ
+  tf.tidy(() => {
+    const dummy = tf.ones(
+      [1, CONFIG.inferenceSize, CONFIG.inferenceSize, 3],
+      'int32'
+    );
+    net.predict(dummy);
+  });
+
+  console.log('tflite model loaded');
+  return net;
+}
+
+async function initCamera() {
+  try {
+    showStatus('モデル読み込み中...');
+
+    const [loadedModel, stream] = await Promise.all([
+      loadTfliteModel(),
+      navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          width: { ideal: CONFIG.targetWidth },
+          height: { ideal: CONFIG.targetHeight },
+          facingMode: 'environment'
+        }
+      })
+    ]);
+
+    model = loadedModel;
+    videoEl.srcObject = stream;
+
+    videoEl.onloadedmetadata = () => {
+      const track = stream.getVideoTracks()[0];
+      const { width, height } = track.getSettings();
+
+      console.log('Camera:', width, 'x', height);
+
+      // 実際の video サイズからアスペクト比を算出
+      videoAspect = videoEl.videoWidth / videoEl.videoHeight || (width / height);
+
+      resizeOverlay();
+
+      hideStatus();
+      requestAnimationFrame(mainLoop);
+    };
+
+    window.addEventListener('resize', () => {
+      resizeOverlay();
+    });
+  } catch (err) {
+    console.error('Error:', err);
+    showStatus(`エラー: ${err.message}`);
+  }
+}
+
+function resizeOverlay() {
+  const containerAspect = window.innerWidth / window.innerHeight;
+  if (containerAspect > videoAspect) {
+    overlayCanvas.width = window.innerWidth;
+    overlayCanvas.height = window.innerWidth / videoAspect;
+  } else {
+    overlayCanvas.height = window.innerHeight;
+    overlayCanvas.width = window.innerHeight * videoAspect;
+  }
+  overlayCanvas.style.left = `${(window.innerWidth - overlayCanvas.width) / 2}px`;
+  overlayCanvas.style.top = `${(window.innerHeight - overlayCanvas.height) / 2}px`;
+
+  // リサイズ時に一度だけガイド枠の座標を計算してキャッシュする
+  updateGuideRectCache();
+}
+
+function updateGuideRectCache() {
+  if (!cardGuideEl) {
+    guideRectOnCanvas = null;
+    return;
+  }
+
+  const guideRect = cardGuideEl.getBoundingClientRect();
+  const canvasRect = overlayCanvas.getBoundingClientRect();
+
+  const x = guideRect.left - canvasRect.left;
+  const y = guideRect.top - canvasRect.top;
+  const w = guideRect.width;
+  const h = guideRect.height;
+
+  if (w <= 0 || h <= 0) {
+    guideRectOnCanvas = null;
+    return;
+  }
+
+  guideRectOnCanvas = { x, y, w, h };
+}
+
+function getGuideRectOnCanvas() {
+  return guideRectOnCanvas;
+}
+
+function mainLoop(now) {
+  if (videoEl.readyState >= videoEl.HAVE_CURRENT_DATA) {
+    if (model && !isDetecting && (now - lastDetectionTime) >= DETECTION_INTERVAL_MS) {
+      isDetecting = true;
+      lastDetectionTime = now;
+      runInference();
+    }
+    drawOverlay();
+  }
+
+  requestAnimationFrame(mainLoop);
+}
+
+function runTfliteDetection(net, sourceCanvas) {
+  return tf.tidy(() => {
+    const input = tf.browser
+      .fromPixels(sourceCanvas)                            // [H, W, 3]
+      .resizeBilinear([CONFIG.inferenceSize, CONFIG.inferenceSize])
+      .expandDims(0)                                       // [1, 192, 192, 3]
+      .toInt();                                            // 多くの TFLite OD モデルは int32/uint8
+
+    const res = net.predict(input);
+
+    const boxesTensor = res['TFLite_Detection_PostProcess'];
+    const classesTensor = res['TFLite_Detection_PostProcess:1'];
+    const scoresTensor = res['TFLite_Detection_PostProcess:2'];
+    const numTensor = res['TFLite_Detection_PostProcess:3'];
+
+    const boxes = boxesTensor.dataSync();    // [N,4] が 1 次元に並んでいる
+    const classes = classesTensor.dataSync();
+    const scores = scoresTensor.dataSync();
+    const numDetections = numTensor.dataSync()[0]; // scalar
+
+    const preds = [];
+    const size = CONFIG.inferenceSize;
+
+    for (let i = 0; i < numDetections; i++) {
+      const score = scores[i];
+      if (score < AUTO_CAPTURE_CONFIG.minScore) continue;
+
+      const base = i * 4;
+      const ymin = boxes[base + 0];
+      const xmin = boxes[base + 1];
+      const ymax = boxes[base + 2];
+      const xmax = boxes[base + 3];
+
+      const x = xmin * size;
+      const y = ymin * size;
+      const w = (xmax - xmin) * size;
+      const h = (ymax - ymin) * size;
+
+      preds.push({
+        bbox: [x, y, w, h],
+        class: `cls_${classes[i]}`,
+        score
+      });
+    }
+
+    return preds;
+  });
+}
+
+async function runInference() {
+  inferenceCtx.drawImage(videoEl, 0, 0, CONFIG.inferenceSize, CONFIG.inferenceSize);
+
+  try {
+    latestPredictions = runTfliteDetection(model, inferenceCanvas);
+    checkAutoCapture();
+  } catch (e) {
+    console.error('Inference Error:', e);
+  } finally {
+    isDetecting = false;
+  }
+}
+
+function drawOverlay() {
+  overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+  if (!latestPredictions.length) return;
+
+  const scaleX = overlayCanvas.width / CONFIG.inferenceSize;
+  const scaleY = overlayCanvas.height / CONFIG.inferenceSize;
+
+  overlayCtx.strokeStyle = '#00FFFF';
+  overlayCtx.fillStyle = '#00FFFF';
+  overlayCtx.lineWidth = 2;
+  overlayCtx.font = '16px sans-serif';
+
+  for (const { bbox, class: cls, score } of latestPredictions) {
+    const [x, y, w, h] = bbox;
+    const sx = x * scaleX;
+    const sy = y * scaleY;
+    const sw = w * scaleX;
+    const sh = h * scaleY;
+
+    overlayCtx.strokeRect(sx, sy, sw, sh);
+
+    const text = `${cls} (${Math.round(score * 100)}%)`;
+    const tw = overlayCtx.measureText(text).width + 8;
+    const ty = sy > 24 ? sy - 24 : sy + 4;
+
+    overlayCtx.fillRect(sx, ty, tw, 20);
+    overlayCtx.fillStyle = '#000';
+    overlayCtx.fillText(text, sx + 4, ty + 14);
+    overlayCtx.fillStyle = '#00FFFF';
+  }
+}
+
+
 function checkAutoCapture() {
   if (!AUTO_CAPTURE_CONFIG.enabled) return;
   if (!latestPredictions.length) {
     alignStartTime = null;
+    hideStatus();
     return;
   }
 
   const guideRect = getGuideRectOnCanvas();
   if (!guideRect) {
     alignStartTime = null;
+    hideStatus();
     return;
   }
 
@@ -277,25 +353,21 @@ function checkAutoCapture() {
   }
 
   if (!bestPred || bestIoU < AUTO_CAPTURE_CONFIG.iouThreshold) {
-    if (alignStartTime !== null) {
-      console.log('alignment lost, IoU =', bestIoU);
-    }
     alignStartTime = null;
+    hideStatus();
     return;
   }
 
   const now = performance.now();
   if (alignStartTime === null) {
     alignStartTime = now;
-    statusEl.parentElement.classList.remove('hidden');
-    statusEl.textContent = '枠に合わせています...';
+    showStatus('枠に合わせています...');
   } else {
     const elapsed = now - alignStartTime;
     const remaining = Math.max(0, AUTO_CAPTURE_CONFIG.requiredMs - elapsed);
     const remainSec = (remaining / 1000).toFixed(1);
 
-    statusEl.parentElement.classList.remove('hidden');
-    statusEl.textContent = `自動撮影まで ${remainSec} 秒`;
+    showStatus(`自動撮影まで ${remainSec} 秒`);
 
     if (elapsed >= AUTO_CAPTURE_CONFIG.requiredMs && !autoCapturing) {
       autoCapturing = true;
@@ -312,8 +384,7 @@ function checkAutoCapture() {
 async function triggerCapture(mode = 'manual') {
   if (videoEl.readyState < videoEl.HAVE_CURRENT_DATA) return;
 
-  statusEl.parentElement.classList.remove('hidden');
-  statusEl.textContent = mode === 'auto' ? '自動撮影中...' : '撮影処理中...';
+  showStatus(mode === 'auto' ? '自動撮影中...' : '撮影処理中...');
 
   captureCanvas.width = videoEl.videoWidth;
   captureCanvas.height = videoEl.videoHeight;
