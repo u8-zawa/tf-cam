@@ -23,6 +23,10 @@
             class="px-3 py-1 rounded-full text-xs font-semibold bg-white/20 text-white/80 border border-white/40">
             ドキュメント
         </button>
+        <button id="mode-receipt-btn"
+            class="px-3 py-1 rounded-full text-xs font-semibold bg-white/20 text-white/80 border border-white/40">
+            レシート
+        </button>
     </div>
 
     <!-- 撮影ガイドレイヤー -->
@@ -40,6 +44,15 @@
             <div
                 class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-white/50 text-sm font-bold whitespace-nowrap">
                 ドキュメントを枠に合わせてください
+            </div>
+        </div>
+
+        <!-- レシート型ガイドフレーム -->
+        <div id="receipt-guide" class="hidden guide-frame guide-mask aspect-[1/2.5] max-h-[85vh] max-w-[80vw]">
+            <div
+                class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-white/50 text-sm font-bold text-center">
+                レシートを縦向きで<br>
+                枠に合わせてください
             </div>
         </div>
     </div>

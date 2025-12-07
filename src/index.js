@@ -28,14 +28,16 @@ const overlayCanvas = document.getElementById('overlay-canvas');
 const overlayCtx = overlayCanvas.getContext('2d');
 const cardGuideEl = document.getElementById('card-guide');
 const documentGuideEl = document.getElementById('document-guide');
+const receiptGuideEl = document.getElementById('receipt-guide');
 
 const MODE_CARD = 'card';
 const MODE_DOCUMENT = 'document';
+const MODE_RECEIPT = 'receipt';
 let currentGuideMode = MODE_CARD;
 
 const cardModeBtn = document.getElementById('mode-card-btn');
 const documentModeBtn = document.getElementById('mode-document-btn');
-
+const receiptModeBtn = document.getElementById('mode-receipt-btn');
 const inferenceCanvas = new OffscreenCanvas(CONFIG.inferenceSize, CONFIG.inferenceSize);
 const inferenceCtx = inferenceCanvas.getContext('2d', { willReadFrequently: true });
 
@@ -64,12 +66,27 @@ function updateGuideButtons(mode) {
 
     documentModeBtn.classList.add('bg-white/20', 'text-white/80', 'border', 'border-white/40');
     documentModeBtn.classList.remove('bg-white', 'text-black/80', 'shadow-md');
-  } else {
+
+    receiptModeBtn.classList.add('bg-white/20', 'text-white/80', 'border', 'border-white/40');
+    receiptModeBtn.classList.remove('bg-white', 'text-black/80', 'shadow-md');
+  } else if (mode === MODE_DOCUMENT) {
     documentModeBtn.classList.add('bg-white', 'text-black/80', 'shadow-md');
     documentModeBtn.classList.remove('bg-white/20', 'text-white/80', 'border', 'border-white/40');
 
     cardModeBtn.classList.add('bg-white/20', 'text-white/80', 'border', 'border-white/40');
     cardModeBtn.classList.remove('bg-white', 'text-black/80', 'shadow-md');
+
+    receiptModeBtn.classList.add('bg-white/20', 'text-white/80', 'border', 'border-white/40');
+    receiptModeBtn.classList.remove('bg-white', 'text-black/80', 'shadow-md');
+  } else if (mode === MODE_RECEIPT) {
+    receiptModeBtn.classList.add('bg-white', 'text-black/80', 'shadow-md');
+    receiptModeBtn.classList.remove('bg-white/20', 'text-white/80', 'border', 'border-white/40');
+
+    cardModeBtn.classList.add('bg-white/20', 'text-white/80', 'border', 'border-white/40');
+    cardModeBtn.classList.remove('bg-white', 'text-black/80', 'shadow-md');
+
+    documentModeBtn.classList.add('bg-white/20', 'text-white/80', 'border', 'border-white/40');
+    documentModeBtn.classList.remove('bg-white', 'text-black/80', 'shadow-md');
   }
 }
 
@@ -79,9 +96,15 @@ function setGuideMode(mode) {
   if (mode === MODE_CARD) {
     if (cardGuideEl) cardGuideEl.classList.remove('hidden');
     if (documentGuideEl) documentGuideEl.classList.add('hidden');
-  } else {
+    if (receiptGuideEl) receiptGuideEl.classList.add('hidden');
+  } else if (mode === MODE_DOCUMENT) {
     if (cardGuideEl) cardGuideEl.classList.add('hidden');
     if (documentGuideEl) documentGuideEl.classList.remove('hidden');
+    if (receiptGuideEl) receiptGuideEl.classList.add('hidden');
+  } else if (mode === MODE_RECEIPT) {
+    if (cardGuideEl) cardGuideEl.classList.add('hidden');
+    if (documentGuideEl) documentGuideEl.classList.add('hidden');
+    if (receiptGuideEl) receiptGuideEl.classList.remove('hidden');
   }
 
   updateGuideButtons(mode);
@@ -241,8 +264,10 @@ function resizeOverlay() {
 }
 
 function updateGuideRectCache() {
-  const activeGuideEl =
-    currentGuideMode === MODE_DOCUMENT ? documentGuideEl : cardGuideEl;
+  const activeGuideEl = currentGuideMode === MODE_CARD ? cardGuideEl
+    : currentGuideMode === MODE_DOCUMENT ? documentGuideEl
+    : currentGuideMode === MODE_RECEIPT ? receiptGuideEl
+    : null;
 
   if (!activeGuideEl || !overlayCanvas) {
     guideRectOnCanvas = null;
@@ -497,6 +522,9 @@ cardModeBtn.addEventListener('click', () => {
 });
 documentModeBtn.addEventListener('click', () => {
   setGuideMode(MODE_DOCUMENT);
+});
+receiptModeBtn.addEventListener('click', () => {
+  setGuideMode(MODE_RECEIPT);
 });
 
 setGuideMode(currentGuideMode);
