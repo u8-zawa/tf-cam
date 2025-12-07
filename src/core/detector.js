@@ -1,4 +1,6 @@
-import * as tf from '@tensorflow/tfjs';
+import * as tf from '@tensorflow/tfjs-core';
+import '@tensorflow/tfjs-backend-webgl';
+import '@tensorflow/tfjs-backend-cpu';
 import * as tflite from '@tensorflow/tfjs-tflite';
 import { CONFIG } from '../config.js';
 
@@ -68,11 +70,11 @@ async function loadTfliteModel() {
 
 function runTfliteDetection(net, sourceCanvas) {
   return tf.tidy(() => {
-    const input = tf.browser
-      .fromPixels(sourceCanvas)                            // [H, W, 3]
-      .resizeBilinear([CONFIG.inferenceSize, CONFIG.inferenceSize])
-      .expandDims(0)                                       // [1, 192, 192, 3]
-      .toInt();                                            // 多くの TFLite OD モデルは int32/uint8
+    const size = CONFIG.inferenceSize;
+    const imageData = inferenceCtx.getImageData(0, 0, size, size);
+    const imageTensor = tf.browser.fromPixels(imageData);
+    const batched = tf.expandDims(imageTensor, 0);
+    const input = tf.cast(batched, 'int32');
 
     const res = net.predict(input);
 
@@ -81,13 +83,12 @@ function runTfliteDetection(net, sourceCanvas) {
     const scoresTensor = res['TFLite_Detection_PostProcess:2'];
     const numTensor = res['TFLite_Detection_PostProcess:3'];
 
-    const boxes = boxesTensor.dataSync();    // [N,4] が 1 次元に並んでいる
+    const boxes = boxesTensor.dataSync();
     const classes = classesTensor.dataSync();
     const scores = scoresTensor.dataSync();
-    const numDetections = numTensor.dataSync()[0]; // scalar
+    const numDetections = numTensor.dataSync()[0];
 
     const preds = [];
-    const size = CONFIG.inferenceSize;
 
     for (let i = 0; i < numDetections; i++) {
       const score = scores[i];
