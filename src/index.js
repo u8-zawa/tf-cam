@@ -4,28 +4,38 @@ import * as tflite from '@tensorflow/tfjs-tflite';
 const CONFIG = {
   inferenceSize: 192,
   targetWidth: 3840,
-  targetHeight: 2160
+  targetHeight: 2160,
+  detectionIntervalMs: 100,
+  autoCapture: {
+    enabled: true,
+    minScore: 0.7,
+    iouThreshold: 0.9,
+    requiredMs: 1500
+  },
+  overlayStyle: {
+    boxColor: '#00FFFF',
+    labelTextColor: '#000000',
+    lineWidth: 2,
+    font: '16px sans-serif'
+  },
+  status: {
+    autoHideDelayMs: 2000
+  },
+  receipt: {
+    defaultRatio: 2
+  }
 };
 
 const TFLITE_MODEL_URL = `${import.meta.env.BASE_URL}model/1.tflite`;
 const PREFERRED_BACKENDS = ['webgl', 'cpu'];
 
-const AUTO_CAPTURE_CONFIG = {
-  enabled: true,
-  minScore: 0.7,
-  iouThreshold: 0.9,
-  requiredMs: 1500
-};
-
-// 推論を間引く間隔（ms）
-// 16ms = 60fps なので「80〜120ms 程度」が体感と負荷のバランスが良い
-const DETECTION_INTERVAL_MS = 100;
-
 const videoEl = document.getElementById('preview-video');
 const statusEl = document.getElementById('status');
 const captureBtn = document.getElementById('shutter-btn');
 const overlayCanvas = document.getElementById('overlay-canvas');
-const overlayCtx = overlayCanvas.getContext('2d');
+const overlayCtx = overlayCanvas && overlayCanvas.getContext
+  ? overlayCanvas.getContext('2d')
+  : null;
 const cardGuideEl = document.getElementById('card-guide');
 const documentGuideEl = document.getElementById('document-guide');
 const receiptGuideEl = document.getElementById('receipt-guide');
@@ -40,11 +50,57 @@ const documentModeBtn = document.getElementById('mode-document-btn');
 const receiptModeBtn = document.getElementById('mode-receipt-btn');
 const receiptControl = document.getElementById('receipt-control');
 const receiptRange = document.getElementById('receipt-length-range');
-const inferenceCanvas = new OffscreenCanvas(CONFIG.inferenceSize, CONFIG.inferenceSize);
-const inferenceCtx = inferenceCanvas.getContext('2d', { willReadFrequently: true });
 
-const captureCanvas = new OffscreenCanvas(1, 1);
-const captureCtx = captureCanvas.getContext('2d');
+function createCanvas(width, height, contextOptions) {
+  let canvas;
+  if (typeof OffscreenCanvas !== 'undefined') {
+    canvas = new OffscreenCanvas(width, height);
+  } else {
+    canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+  }
+
+  const ctx = canvas.getContext('2d', contextOptions || {});
+  if (!ctx) {
+    console.error('2D コンテキストを取得できませんでした');
+  }
+  return { canvas, ctx };
+}
+
+async function canvasToBlob(canvas, options) {
+  const opts = options || { type: 'image/jpeg', quality: 0.95 };
+
+  if (typeof canvas.convertToBlob === 'function') {
+    return await canvas.convertToBlob(opts);
+  }
+
+  if (typeof canvas.toBlob === 'function') {
+    return new Promise((resolve, reject) => {
+      canvas.toBlob(
+        (blob) => {
+          if (blob) {
+            resolve(blob);
+          } else {
+            reject(new Error('画像の生成に失敗しました'));
+          }
+        },
+        opts.type || 'image/jpeg',
+        opts.quality
+      );
+    });
+  }
+
+  throw new Error('このブラウザは画像保存に対応していません');
+}
+
+const { canvas: inferenceCanvas, ctx: inferenceCtx } = createCanvas(
+  CONFIG.inferenceSize,
+  CONFIG.inferenceSize,
+  { willReadFrequently: true }
+);
+
+const { canvas: captureCanvas, ctx: captureCtx } = createCanvas(1, 1);
 
 let model = null;
 let isDetecting = false;
@@ -171,6 +227,20 @@ async function loadTfliteModel() {
 }
 
 async function initCamera() {
+  if (!videoEl) {
+    console.error('#preview-video 要素が見つかりません');
+    alert('カメラのプレビュー領域が見つかりません。ページを再読み込みしてください。');
+    return;
+  }
+
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    const msg = 'このブラウザはカメラ取得に対応していません。別のブラウザをお試しください。';
+    console.error(msg);
+    showStatus(msg);
+    alert(msg);
+    return;
+  }
+
   try {
     showStatus('モデル読み込み中...');
 
@@ -208,11 +278,18 @@ async function initCamera() {
     });
   } catch (err) {
     console.error('Error:', err);
-    showStatus(`エラー: ${err.message}`);
+    const message = err && err.message ? err.message : String(err);
+    showStatus(`エラー: ${message}`);
+    alert(
+      'カメラの起動に失敗しました。カメラの権限や他のアプリの使用状況を確認してから、ページを再読み込みしてください。\n\n詳細: ' +
+      message
+    );
   }
 }
 
 function resizeOverlay() {
+  if (!overlayCanvas) return;
+
   const containerAspect = window.innerWidth / window.innerHeight;
   if (containerAspect > videoAspect) {
     overlayCanvas.width = window.innerWidth;
@@ -263,8 +340,14 @@ function getGuideRectOnCanvas() {
 }
 
 function mainLoop(now) {
+  if (!videoEl) return;
+
   if (videoEl.readyState >= videoEl.HAVE_CURRENT_DATA) {
-    if (model && !isDetecting && (now - lastDetectionTime) >= DETECTION_INTERVAL_MS) {
+    if (
+      model &&
+      !isDetecting &&
+      (now - lastDetectionTime) >= CONFIG.detectionIntervalMs
+    ) {
       isDetecting = true;
       lastDetectionTime = now;
       runInference();
@@ -300,7 +383,7 @@ function runTfliteDetection(net, sourceCanvas) {
 
     for (let i = 0; i < numDetections; i++) {
       const score = scores[i];
-      if (score < AUTO_CAPTURE_CONFIG.minScore) continue;
+      if (score < CONFIG.autoCapture.minScore) continue;
 
       const base = i * 4;
       const ymin = boxes[base + 0];
@@ -325,6 +408,11 @@ function runTfliteDetection(net, sourceCanvas) {
 }
 
 async function runInference() {
+  if (!inferenceCtx || !inferenceCanvas || !videoEl) {
+    isDetecting = false;
+    return;
+  }
+
   inferenceCtx.drawImage(videoEl, 0, 0, CONFIG.inferenceSize, CONFIG.inferenceSize);
 
   try {
@@ -332,22 +420,26 @@ async function runInference() {
     checkAutoCapture();
   } catch (e) {
     console.error('Inference Error:', e);
+    showStatus('推論中にエラーが発生しました。しばらくしてから再試行してください。');
   } finally {
     isDetecting = false;
   }
 }
 
 function drawOverlay() {
+  if (!overlayCanvas || !overlayCtx) return;
+
   overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
   if (!latestPredictions.length) return;
 
   const scaleX = overlayCanvas.width / CONFIG.inferenceSize;
   const scaleY = overlayCanvas.height / CONFIG.inferenceSize;
 
-  overlayCtx.strokeStyle = '#00FFFF';
-  overlayCtx.fillStyle = '#00FFFF';
-  overlayCtx.lineWidth = 2;
-  overlayCtx.font = '16px sans-serif';
+  const style = CONFIG.overlayStyle;
+  overlayCtx.strokeStyle = style.boxColor;
+  overlayCtx.fillStyle = style.boxColor;
+  overlayCtx.lineWidth = style.lineWidth;
+  overlayCtx.font = style.font;
 
   for (const { bbox, class: cls, score } of latestPredictions) {
     const [x, y, w, h] = bbox;
@@ -362,16 +454,16 @@ function drawOverlay() {
     const tw = overlayCtx.measureText(text).width + 8;
     const ty = sy > 24 ? sy - 24 : sy + 4;
 
+    // ラベル背景
     overlayCtx.fillRect(sx, ty, tw, 20);
-    overlayCtx.fillStyle = '#000';
+    overlayCtx.fillStyle = style.labelTextColor;
     overlayCtx.fillText(text, sx + 4, ty + 14);
-    overlayCtx.fillStyle = '#00FFFF';
+    overlayCtx.fillStyle = style.boxColor;
   }
 }
 
-
 function checkAutoCapture() {
-  if (!AUTO_CAPTURE_CONFIG.enabled) return;
+  if (!CONFIG.autoCapture.enabled) return;
   if (!latestPredictions.length) {
     alignStartTime = null;
     hideStatus();
@@ -379,7 +471,7 @@ function checkAutoCapture() {
   }
 
   const guideRect = getGuideRectOnCanvas();
-  if (!guideRect) {
+  if (!guideRect || !overlayCanvas) {
     alignStartTime = null;
     hideStatus();
     return;
@@ -392,7 +484,7 @@ function checkAutoCapture() {
   let bestPred = null;
 
   for (const pred of latestPredictions) {
-    if (pred.score < AUTO_CAPTURE_CONFIG.minScore) continue;
+    if (pred.score < CONFIG.autoCapture.minScore) continue;
 
     const [x, y, w, h] = pred.bbox;
     const rectOnCanvas = {
@@ -409,7 +501,7 @@ function checkAutoCapture() {
     }
   }
 
-  if (!bestPred || bestIoU < AUTO_CAPTURE_CONFIG.iouThreshold) {
+  if (!bestPred || bestIoU < CONFIG.autoCapture.iouThreshold) {
     alignStartTime = null;
     hideStatus();
     return;
@@ -421,12 +513,12 @@ function checkAutoCapture() {
     showStatus('枠に合わせています...');
   } else {
     const elapsed = now - alignStartTime;
-    const remaining = Math.max(0, AUTO_CAPTURE_CONFIG.requiredMs - elapsed);
+    const remaining = Math.max(0, CONFIG.autoCapture.requiredMs - elapsed);
     const remainSec = (remaining / 1000).toFixed(1);
 
     showStatus(`自動撮影まで ${remainSec} 秒`);
 
-    if (elapsed >= AUTO_CAPTURE_CONFIG.requiredMs && !autoCapturing) {
+    if (elapsed >= CONFIG.autoCapture.requiredMs && !autoCapturing) {
       autoCapturing = true;
       console.log('auto capture triggered, IoU =', bestIoU, 'score =', bestPred.score);
 
@@ -439,7 +531,11 @@ function checkAutoCapture() {
 }
 
 async function triggerCapture(mode = 'manual', cropBbox = null) {
-  if (videoEl.readyState < videoEl.HAVE_CURRENT_DATA) return;
+  if (!videoEl || videoEl.readyState < videoEl.HAVE_CURRENT_DATA) return;
+  if (!captureCtx || !captureCanvas) {
+    console.error('captureCanvas / captureCtx が初期化されていません');
+    return;
+  }
 
   showStatus(mode === 'auto' ? '自動撮影中...' : '撮影処理中...');
 
@@ -461,44 +557,66 @@ async function triggerCapture(mode = 'manual', cropBbox = null) {
     captureCanvas.height = sh;
 
     captureCtx.drawImage(videoEl, sx, sy, sw, sh, 0, 0, sw, sh);
-
   } else {
     captureCanvas.width = videoW;
     captureCanvas.height = videoH;
     captureCtx.drawImage(videoEl, 0, 0);
   }
 
-  const blob = await captureCanvas.convertToBlob({ type: 'image/jpeg', quality: 0.95 });
-  const url = URL.createObjectURL(blob);
-  const a = Object.assign(document.createElement('a'), {
-    href: url,
-    download: `capture_${Date.now()}_${mode}.jpg`
-  });
-  a.click();
-  URL.revokeObjectURL(url);
+  try {
+    const blob = await canvasToBlob(captureCanvas, {
+      type: 'image/jpeg',
+      quality: 0.95
+    });
+    const url = URL.createObjectURL(blob);
+    const a = Object.assign(document.createElement('a'), {
+      href: url,
+      download: `capture_${Date.now()}_${mode}.jpg`
+    });
+    a.click();
+    URL.revokeObjectURL(url);
 
-  statusEl.textContent = `保存完了 (${mode === 'auto' ? '自動' : '手動'}): ${captureCanvas.width}x${captureCanvas.height}`;
-  setTimeout(() => statusEl.parentElement.classList.add('hidden'), 2000);
+    showStatus(
+      `保存完了 (${mode === 'auto' ? '自動' : '手動'}): ${captureCanvas.width}x${captureCanvas.height}`
+    );
+    setTimeout(() => {
+      hideStatus();
+    }, CONFIG.status.autoHideDelayMs);
+  } catch (e) {
+    console.error('保存処理中にエラーが発生しました:', e);
+    showStatus('保存処理中にエラーが発生しました。');
+    alert('保存処理中にエラーが発生しました。ストレージの空き容量などをご確認ください。');
+  }
 }
 
-captureBtn.addEventListener('click', () => {
-  if (autoCapturing) return;
-  triggerCapture('manual');
-});
+if (captureBtn) {
+  captureBtn.addEventListener('click', () => {
+    if (autoCapturing) return;
+    triggerCapture('manual');
+  });
+} else {
+  console.warn('#shutter-btn 要素が見つかりません');
+}
 
-cardModeBtn.addEventListener('click', () => setMode(MODE_CARD));
-documentModeBtn.addEventListener('click', () => setMode(MODE_DOCUMENT));
-receiptModeBtn.addEventListener('click', () => setMode(MODE_RECEIPT));
+if (cardModeBtn) {
+  cardModeBtn.addEventListener('click', () => setMode(MODE_CARD));
+}
+if (documentModeBtn) {
+  documentModeBtn.addEventListener('click', () => setMode(MODE_DOCUMENT));
+}
+if (receiptModeBtn) {
+  receiptModeBtn.addEventListener('click', () => setMode(MODE_RECEIPT));
+}
 
 if (receiptRange && receiptGuideEl) {
   receiptRange.addEventListener('input', (e) => {
-    const ratio = Number(e.target.value) || 2;
+    const ratio = Number(e.target.value) || CONFIG.receipt.defaultRatio;
     receiptGuideEl.style.setProperty('--receipt-ratio', ratio);
-
     updateGuideRectCache();
   });
 
-  receiptGuideEl.style.setProperty('--receipt-ratio', receiptRange.value || 2);
+  const initialRatio = receiptRange.value || CONFIG.receipt.defaultRatio;
+  receiptGuideEl.style.setProperty('--receipt-ratio', initialRatio);
 }
 
 setMode(currentGuideMode);
