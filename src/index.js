@@ -33,7 +33,7 @@ const receiptGuideEl = document.getElementById('receipt-guide');
 const MODE_CARD = 'card';
 const MODE_DOCUMENT = 'document';
 const MODE_RECEIPT = 'receipt';
-let currentGuideMode = MODE_RECEIPT;
+let currentGuideMode = MODE_CARD;
 
 const cardModeBtn = document.getElementById('mode-card-btn');
 const documentModeBtn = document.getElementById('mode-document-btn');
@@ -158,7 +158,6 @@ async function loadTfliteModel() {
 
   const net = await tflite.loadTFLiteModel(TFLITE_MODEL_URL);
 
-  // 1回だけウォームアップ
   tf.tidy(() => {
     const dummy = tf.ones(
       [1, CONFIG.inferenceSize, CONFIG.inferenceSize, 3],
@@ -196,7 +195,6 @@ async function initCamera() {
 
       console.log('Camera:', width, 'x', height);
 
-      // 実際の video サイズからアスペクト比を算出
       videoAspect = videoEl.videoWidth / videoEl.videoHeight || (width / height);
 
       resizeOverlay();
@@ -226,7 +224,6 @@ function resizeOverlay() {
   overlayCanvas.style.left = `${(window.innerWidth - overlayCanvas.width) / 2}px`;
   overlayCanvas.style.top = `${(window.innerHeight - overlayCanvas.height) / 2}px`;
 
-  // リサイズ時に一度だけガイド枠の座標を計算してキャッシュする
   updateGuideRectCache();
 }
 
@@ -499,7 +496,6 @@ if (receiptRange && receiptGuideEl) {
     receiptGuideEl.style.setProperty('--receipt-ratio', ratio);
   });
 
-  // 初期値を反映
   receiptGuideEl.style.setProperty('--receipt-ratio', receiptRange.value || 2);
 }
 
