@@ -25,10 +25,17 @@ export const CONFIG = {
     requiredMs: 1500
   },
   overlayStyle: {
-    boxColor: '#00FFFF',
-    labelTextColor: '#000000',
-    lineWidth: 2,
-    font: '16px sans-serif'
+    cornerColor: 'rgba(255, 255, 255, 0.9)',
+    cornerLength: 24,
+    cornerWidth: 3,
+    cornerRadius: 8,
+    fillColor: 'rgba(255, 255, 255, 0.05)',
+    labelBgColor: 'rgba(0, 0, 0, 0.6)',
+    labelTextColor: '#FFFFFF',
+    labelFont: '500 12px system-ui, sans-serif',
+    labelPadding: { x: 10, y: 6 },
+    labelRadius: 12,
+    labelGap: 8
   },
   status: {
     autoHideDelayMs: 2000

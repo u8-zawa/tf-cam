@@ -108,24 +108,87 @@ function setupCaptureButton() {
   }
 }
 
+function drawCornerMarkers(ctx, x, y, w, h, style) {
+  const { cornerColor, cornerLength, cornerWidth, cornerRadius } = style;
+  const len = cornerLength;
+  const r = Math.min(cornerRadius, len);
+
+  ctx.strokeStyle = cornerColor;
+  ctx.lineWidth = cornerWidth;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  // 左上
+  ctx.beginPath();
+  ctx.moveTo(x, y + len);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.lineTo(x + len, y);
+  ctx.stroke();
+
+  // 右上
+  ctx.beginPath();
+  ctx.moveTo(x + w - len, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + len);
+  ctx.stroke();
+
+  // 右下
+  ctx.beginPath();
+  ctx.moveTo(x + w, y + h - len);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + w - len, y + h);
+  ctx.stroke();
+
+  // 左下
+  ctx.beginPath();
+  ctx.moveTo(x + len, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + h - len);
+  ctx.stroke();
+}
+
+function drawLabel(ctx, boxX, boxY, cls, score, style) {
+  const text = `${cls} ${Math.round(score * 100)}%`;
+  ctx.font = style.labelFont;
+  const metrics = ctx.measureText(text);
+  const textWidth = metrics.width;
+  const textHeight = 12
+
+  const padX = style.labelPadding.x;
+  const padY = style.labelPadding.y;
+  const labelW = textWidth + padX * 2;
+  const labelH = textHeight + padY * 2;
+  const radius = style.labelRadius;
+
+  const labelX = boxX;
+  const labelY = boxY - labelH - style.labelGap;
+
+  ctx.fillStyle = style.labelBgColor;
+  roundRect(ctx, labelX, labelY, labelW, labelH, radius);
+  ctx.fill();
+
+  ctx.fillStyle = style.labelTextColor;
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, labelX + padX, labelY + labelH / 2);
+}
+
 function drawOverlay(predictions) {
   const overlayCanvas = getOverlayCanvas();
   if (!overlayCanvas) return;
 
-  const overlayCtx = overlayCanvas.getContext('2d');
-  if (!overlayCtx) return;
+  const ctx = overlayCanvas.getContext('2d');
+  if (!ctx) return;
 
-  overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+  ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
   if (!predictions || !predictions.length) return;
 
   const scaleX = overlayCanvas.width / CONFIG.inferenceSize;
   const scaleY = overlayCanvas.height / CONFIG.inferenceSize;
-
   const style = CONFIG.overlayStyle;
-  overlayCtx.strokeStyle = style.boxColor;
-  overlayCtx.fillStyle = style.boxColor;
-  overlayCtx.lineWidth = style.lineWidth;
-  overlayCtx.font = style.font;
 
   for (const { bbox, class: cls, score } of predictions) {
     const [x, y, w, h] = bbox;
@@ -134,18 +197,29 @@ function drawOverlay(predictions) {
     const sw = w * scaleX;
     const sh = h * scaleY;
 
-    overlayCtx.strokeRect(sx, sy, sw, sh);
+    ctx.fillStyle = style.fillColor;
+    roundRect(ctx, sx, sy, sw, sh, style.cornerRadius);
+    ctx.fill();
 
-    const text = `${cls} (${Math.round(score * 100)}%)`;
-    const tw = overlayCtx.measureText(text).width + 8;
-    const ty = sy > 24 ? sy - 24 : sy + 4;
+    drawCornerMarkers(ctx, sx, sy, sw, sh, style);
 
-    // ラベル背景
-    overlayCtx.fillRect(sx, ty, tw, 20);
-    overlayCtx.fillStyle = style.labelTextColor;
-    overlayCtx.fillText(text, sx + 4, ty + 14);
-    overlayCtx.fillStyle = style.boxColor;
+    drawLabel(ctx, sx, sy, cls, score, style);
   }
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
 }
 
 function mainLoop(now) {
