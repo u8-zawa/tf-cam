@@ -27,6 +27,14 @@ const captureBtn = document.getElementById('shutter-btn');
 const overlayCanvas = document.getElementById('overlay-canvas');
 const overlayCtx = overlayCanvas.getContext('2d');
 const cardGuideEl = document.getElementById('card-guide');
+const documentGuideEl = document.getElementById('document-guide');
+
+const MODE_CARD = 'card';
+const MODE_DOCUMENT = 'document';
+let currentGuideMode = MODE_CARD;
+
+const cardModeBtn = document.getElementById('mode-card-btn');
+const documentModeBtn = document.getElementById('mode-document-btn');
 
 const inferenceCanvas = new OffscreenCanvas(CONFIG.inferenceSize, CONFIG.inferenceSize);
 const inferenceCtx = inferenceCanvas.getContext('2d', { willReadFrequently: true });
@@ -46,6 +54,39 @@ const statusState = {
   visible: false,
   text: ''
 };
+
+function updateGuideButtons(mode) {
+  if (!cardModeBtn || !documentModeBtn) return;
+
+  if (mode === MODE_CARD) {
+    cardModeBtn.classList.add('bg-white', 'text-black/80', 'shadow-md');
+    cardModeBtn.classList.remove('bg-white/20', 'text-white/80', 'border', 'border-white/40');
+
+    documentModeBtn.classList.add('bg-white/20', 'text-white/80', 'border', 'border-white/40');
+    documentModeBtn.classList.remove('bg-white', 'text-black/80', 'shadow-md');
+  } else {
+    documentModeBtn.classList.add('bg-white', 'text-black/80', 'shadow-md');
+    documentModeBtn.classList.remove('bg-white/20', 'text-white/80', 'border', 'border-white/40');
+
+    cardModeBtn.classList.add('bg-white/20', 'text-white/80', 'border', 'border-white/40');
+    cardModeBtn.classList.remove('bg-white', 'text-black/80', 'shadow-md');
+  }
+}
+
+function setGuideMode(mode) {
+  currentGuideMode = mode;
+
+  if (mode === MODE_CARD) {
+    if (cardGuideEl) cardGuideEl.classList.remove('hidden');
+    if (documentGuideEl) documentGuideEl.classList.add('hidden');
+  } else {
+    if (cardGuideEl) cardGuideEl.classList.add('hidden');
+    if (documentGuideEl) documentGuideEl.classList.remove('hidden');
+  }
+
+  updateGuideButtons(mode);
+  updateGuideRectCache();
+}
 
 function showStatus(text) {
   if (!statusEl) return;
@@ -200,12 +241,15 @@ function resizeOverlay() {
 }
 
 function updateGuideRectCache() {
-  if (!cardGuideEl) {
+  const activeGuideEl =
+    currentGuideMode === MODE_DOCUMENT ? documentGuideEl : cardGuideEl;
+
+  if (!activeGuideEl || !overlayCanvas) {
     guideRectOnCanvas = null;
     return;
   }
 
-  const guideRect = cardGuideEl.getBoundingClientRect();
+  const guideRect = activeGuideEl.getBoundingClientRect();
   const canvasRect = overlayCanvas.getBoundingClientRect();
 
   const x = guideRect.left - canvasRect.left;
@@ -448,5 +492,12 @@ captureBtn.addEventListener('click', () => {
   if (autoCapturing) return;
   triggerCapture('manual');
 });
+cardModeBtn.addEventListener('click', () => {
+  setGuideMode(MODE_CARD);
+});
+documentModeBtn.addEventListener('click', () => {
+  setGuideMode(MODE_DOCUMENT);
+});
 
+setGuideMode(currentGuideMode);
 initCamera();
