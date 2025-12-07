@@ -20,3 +20,10 @@ TensorFlow Lite でカード/ドキュメント/レシート枠を検出して�
 ## Notes
 
 - 開発サーバーはデフォルトで HTTPS + COOP/COEP（`vite.config.js`）。追加アセットはクロスオリジン分離に対応させる。
+
+## License notice
+
+本アプリケーションでは、TensorFlow が Apache License 2.0 の下で提供する
+「[mobile_object_localizer_v1](https://www.kaggle.com/models/google/mobile-object-localizer-v1/tfLite)」モデルを使用しています。
+© The TensorFlow Authors
+https://www.apache.org/licenses/LICENSE-2.0
