@@ -1,17 +1,19 @@
-import '@tensorflow/tfjs';
-import * as cocoSsd from '@tensorflow-models/coco-ssd';
+import * as tf from '@tensorflow/tfjs';
+import * as tflite from '@tensorflow/tfjs-tflite';
 
 const CONFIG = {
-  inferenceSize: 512,
+  inferenceSize: 192,
   targetWidth: 3840,
   targetHeight: 2160
 };
 
+const TFLITE_MODEL_URL = '/model/1.tflite';
+
 const AUTO_CAPTURE_CONFIG = {
-  enabled: true,          // 自動撮影ON/OFF
-  minScore: 0.5,          // このスコア以上のbboxだけ採用
-  iouThreshold: 0.6,      // ガイド枠とのIoUがこの値以上で「一致」とみなす
-  requiredMs: 1500        // このミリ秒以上一致していたら自動撮影
+  enabled: true,
+  minScore: 0.7,
+  iouThreshold: 0.9,
+  requiredMs: 1500
 };
 
 const videoEl = document.getElementById('preview-video');
@@ -32,9 +34,28 @@ let isDetecting = false;
 let latestPredictions = [];
 let videoAspect = 1;
 
-// 自動撮影用の状態
-let alignStartTime = null;   // ガイドと一致し始めた時刻
-let autoCapturing = false;   // 自動撮影中フラグ
+let alignStartTime = null;
+let autoCapturing = false;
+
+async function loadTfliteModel() {
+  console.log('loading tflite model:', TFLITE_MODEL_URL);
+
+  await tf.setBackend('webgl');
+  await tf.ready();
+
+  const net = await tflite.loadTFLiteModel(TFLITE_MODEL_URL);
+
+  tf.tidy(() => {
+    const dummy = tf.ones(
+      [1, CONFIG.inferenceSize, CONFIG.inferenceSize, 3],
+      'int32'
+    );
+    net.predict(dummy);
+  });
+
+  console.log('tflite model loaded');
+  return net;
+}
 
 async function initCamera() {
   try {
@@ -42,7 +63,7 @@ async function initCamera() {
     statusEl.textContent = 'モデル読み込み中...';
 
     const [loadedModel, stream] = await Promise.all([
-      cocoSsd.load(),
+      loadTfliteModel(),
       navigator.mediaDevices.getUserMedia({
         audio: false,
         video: {
@@ -98,12 +119,51 @@ function mainLoop() {
   requestAnimationFrame(mainLoop);
 }
 
+function runTfliteDetection(net, sourceCanvas) {
+  return tf.tidy(() => {
+    const input = tf.browser
+      .fromPixels(sourceCanvas)                            // [H, W, 3]
+      .resizeBilinear([CONFIG.inferenceSize, CONFIG.inferenceSize])
+      .expandDims(0)                                       // [1, 192, 192, 3]
+      .toInt();                                            // 多くの TFLite OD モデルは int32/uint8
+
+    const res = net.predict(input);
+
+    const boxes = res['TFLite_Detection_PostProcess'].arraySync()[0];       // [N, 4]
+    const scores = res['TFLite_Detection_PostProcess:2'].arraySync()[0];    // [N]
+    const classes = res['TFLite_Detection_PostProcess:1'].arraySync()[0];   // [N]
+    const numDetections = res['TFLite_Detection_PostProcess:3'].arraySync()[0]; // [1] -> scalar
+
+    const preds = [];
+
+    for (let i = 0; i < numDetections; i++) {
+      const score = scores[i];
+      if (score < 0.7) continue;
+
+      const [ymin, xmin, ymax, xmax] = boxes[i];
+
+      const x = xmin * CONFIG.inferenceSize;
+      const y = ymin * CONFIG.inferenceSize;
+      const w = (xmax - xmin) * CONFIG.inferenceSize;
+      const h = (ymax - ymin) * CONFIG.inferenceSize;
+
+      preds.push({
+        bbox: [x, y, w, h],
+        class: `cls_${classes[i]}`,
+        score
+      });
+    }
+
+    return preds;
+  });
+}
+
 async function runInference() {
   inferenceCtx.drawImage(videoEl, 0, 0, CONFIG.inferenceSize, CONFIG.inferenceSize);
 
   try {
-    latestPredictions = await model.detect(inferenceCanvas);
-    checkAutoCapture();   // ★ 推論のたびに自動撮影判定
+    latestPredictions = runTfliteDetection(model, inferenceCanvas);
+    checkAutoCapture();
   } catch (e) {
     console.error('Inference Error:', e);
   }
@@ -139,31 +199,22 @@ function drawOverlay() {
   }
 }
 
-/**
- * ガイドフレーム（cardGuideEl）の位置を「overlayCanvas座標系」で取得
- */
 function getGuideRectOnCanvas() {
   if (!cardGuideEl) return null;
 
   const guideRect = cardGuideEl.getBoundingClientRect();
   const canvasRect = overlayCanvas.getBoundingClientRect();
 
-  // ガイド枠とキャンバスは画面上の別要素なので、
-  // キャンバス左上を(0,0)とした相対座標に変換
   const x = guideRect.left - canvasRect.left;
   const y = guideRect.top - canvasRect.top;
   const w = guideRect.width;
   const h = guideRect.height;
 
-  // キャンバス外に大きくはみ出している場合は無効
   if (w <= 0 || h <= 0) return null;
 
   return { x, y, w, h };
 }
 
-/**
- * 2つの矩形のIoU（Intersection over Union）を計算
- */
 function rectIoU(a, b) {
   const ax2 = a.x + a.w;
   const ay2 = a.y + a.h;
@@ -188,10 +239,6 @@ function rectIoU(a, b) {
   return union > 0 ? inter / union : 0;
 }
 
-/**
- * ガイド枠と推論結果のbboxを比較して、
- * 一定時間以上良い位置にあれば自動撮影を行う
- */
 function checkAutoCapture() {
   if (!AUTO_CAPTURE_CONFIG.enabled) return;
   if (!latestPredictions.length) {
@@ -208,7 +255,6 @@ function checkAutoCapture() {
   const scaleX = overlayCanvas.width / CONFIG.inferenceSize;
   const scaleY = overlayCanvas.height / CONFIG.inferenceSize;
 
-  // 一番スコアの高いbboxを1つ選んで比較（クラスは問わない）
   let bestIoU = 0;
   let bestPred = null;
 
@@ -231,7 +277,6 @@ function checkAutoCapture() {
   }
 
   if (!bestPred || bestIoU < AUTO_CAPTURE_CONFIG.iouThreshold) {
-    // 位置がずれたらカウントリセット
     if (alignStartTime !== null) {
       console.log('alignment lost, IoU =', bestIoU);
     }
@@ -253,7 +298,6 @@ function checkAutoCapture() {
     statusEl.textContent = `自動撮影まで ${remainSec} 秒`;
 
     if (elapsed >= AUTO_CAPTURE_CONFIG.requiredMs && !autoCapturing) {
-      // 一度だけ自動撮影を走らせる
       autoCapturing = true;
       console.log('auto capture triggered, IoU =', bestIoU, 'score =', bestPred.score);
 
@@ -265,10 +309,6 @@ function checkAutoCapture() {
   }
 }
 
-/**
- * フレームを撮影して保存する共通処理
- * mode: 'manual' | 'auto'
- */
 async function triggerCapture(mode = 'manual') {
   if (videoEl.readyState < videoEl.HAVE_CURRENT_DATA) return;
 
@@ -292,9 +332,8 @@ async function triggerCapture(mode = 'manual') {
   setTimeout(() => statusEl.parentElement.classList.add('hidden'), 2000);
 }
 
-// 手動シャッター
 captureBtn.addEventListener('click', () => {
-  if (autoCapturing) return; // 自動撮影中はスキップ
+  if (autoCapturing) return;
   triggerCapture('manual');
 });
 
