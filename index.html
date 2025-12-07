@@ -14,19 +14,27 @@
     <video id="preview-video" autoplay playsinline muted class="absolute inset-0 w-full h-full object-cover"></video>
 
     <!-- ガイドモード切り替え -->
-    <div class="absolute top-4 right-4 z-30 flex gap-2">
-        <button id="mode-card-btn"
-            class="px-3 py-1 rounded-full text-xs font-semibold bg-white text-black/80 shadow-md">
-            カード
-        </button>
-        <button id="mode-document-btn"
-            class="px-3 py-1 rounded-full text-xs font-semibold bg-white/20 text-white/80 border border-white/40">
-            ドキュメント
-        </button>
-        <button id="mode-receipt-btn"
-            class="px-3 py-1 rounded-full text-xs font-semibold bg-white/20 text-white/80 border border-white/40">
-            レシート
-        </button>
+    <div class="absolute top-4 right-4 z-30 flex flex-col items-end gap-2">
+        <div class="flex gap-2">
+            <button id="mode-card-btn"
+                class="px-3 py-1 rounded-full text-xs font-semibold bg-white text-black/80 shadow-md">
+                カード
+            </button>
+            <button id="mode-document-btn"
+                class="px-3 py-1 rounded-full text-xs font-semibold bg-white/20 text-white/80 border border-white/40">
+                ドキュメント
+            </button>
+            <button id="mode-receipt-btn"
+                class="px-3 py-1 rounded-full text-xs font-semibold bg-white/20 text-white/80 border border-white/40">
+                レシート
+            </button>
+        </div>
+
+        <div id="receipt-control"
+            class="mt-1 px-3 py-2 rounded-full bg-black/60 border border-white/20 text-[10px] text-white/70 flex items-center gap-2">
+            <span>長さ</span>
+            <input id="receipt-length-range" type="range" min="1.2" max="3.0" step="0.1" class="w-24 accent-white">
+        </div>
     </div>
 
     <!-- 撮影ガイドレイヤー -->
@@ -48,7 +56,7 @@
         </div>
 
         <!-- レシート型ガイドフレーム -->
-        <div id="receipt-guide" class="hidden guide-frame guide-mask aspect-[1/2.5] max-h-[85vh] max-w-[80vw]">
+        <div id="receipt-guide" class="hidden guide-frame guide-mask">
             <div
                 class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-white/50 text-sm font-bold text-center">
                 レシートを縦向きで<br>

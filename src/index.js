@@ -33,11 +33,13 @@ const receiptGuideEl = document.getElementById('receipt-guide');
 const MODE_CARD = 'card';
 const MODE_DOCUMENT = 'document';
 const MODE_RECEIPT = 'receipt';
-let currentGuideMode = MODE_CARD;
+let currentGuideMode = MODE_RECEIPT;
 
 const cardModeBtn = document.getElementById('mode-card-btn');
 const documentModeBtn = document.getElementById('mode-document-btn');
 const receiptModeBtn = document.getElementById('mode-receipt-btn');
+const receiptControl = document.getElementById('receipt-control');
+const receiptRange = document.getElementById('receipt-length-range');
 const inferenceCanvas = new OffscreenCanvas(CONFIG.inferenceSize, CONFIG.inferenceSize);
 const inferenceCtx = inferenceCanvas.getContext('2d', { willReadFrequently: true });
 
@@ -57,57 +59,22 @@ const statusState = {
   text: ''
 };
 
-function updateGuideButtons(mode) {
-  if (!cardModeBtn || !documentModeBtn) return;
-
-  if (mode === MODE_CARD) {
-    cardModeBtn.classList.add('bg-white', 'text-black/80', 'shadow-md');
-    cardModeBtn.classList.remove('bg-white/20', 'text-white/80', 'border', 'border-white/40');
-
-    documentModeBtn.classList.add('bg-white/20', 'text-white/80', 'border', 'border-white/40');
-    documentModeBtn.classList.remove('bg-white', 'text-black/80', 'shadow-md');
-
-    receiptModeBtn.classList.add('bg-white/20', 'text-white/80', 'border', 'border-white/40');
-    receiptModeBtn.classList.remove('bg-white', 'text-black/80', 'shadow-md');
-  } else if (mode === MODE_DOCUMENT) {
-    documentModeBtn.classList.add('bg-white', 'text-black/80', 'shadow-md');
-    documentModeBtn.classList.remove('bg-white/20', 'text-white/80', 'border', 'border-white/40');
-
-    cardModeBtn.classList.add('bg-white/20', 'text-white/80', 'border', 'border-white/40');
-    cardModeBtn.classList.remove('bg-white', 'text-black/80', 'shadow-md');
-
-    receiptModeBtn.classList.add('bg-white/20', 'text-white/80', 'border', 'border-white/40');
-    receiptModeBtn.classList.remove('bg-white', 'text-black/80', 'shadow-md');
-  } else if (mode === MODE_RECEIPT) {
-    receiptModeBtn.classList.add('bg-white', 'text-black/80', 'shadow-md');
-    receiptModeBtn.classList.remove('bg-white/20', 'text-white/80', 'border', 'border-white/40');
-
-    cardModeBtn.classList.add('bg-white/20', 'text-white/80', 'border', 'border-white/40');
-    cardModeBtn.classList.remove('bg-white', 'text-black/80', 'shadow-md');
-
-    documentModeBtn.classList.add('bg-white/20', 'text-white/80', 'border', 'border-white/40');
-    documentModeBtn.classList.remove('bg-white', 'text-black/80', 'shadow-md');
-  }
-}
-
-function setGuideMode(mode) {
+function setMode(mode) {
   currentGuideMode = mode;
 
-  if (mode === MODE_CARD) {
-    if (cardGuideEl) cardGuideEl.classList.remove('hidden');
-    if (documentGuideEl) documentGuideEl.classList.add('hidden');
-    if (receiptGuideEl) receiptGuideEl.classList.add('hidden');
-  } else if (mode === MODE_DOCUMENT) {
-    if (cardGuideEl) cardGuideEl.classList.add('hidden');
-    if (documentGuideEl) documentGuideEl.classList.remove('hidden');
-    if (receiptGuideEl) receiptGuideEl.classList.add('hidden');
-  } else if (mode === MODE_RECEIPT) {
-    if (cardGuideEl) cardGuideEl.classList.add('hidden');
-    if (documentGuideEl) documentGuideEl.classList.add('hidden');
-    if (receiptGuideEl) receiptGuideEl.classList.remove('hidden');
-  }
+  if (cardGuideEl) cardGuideEl.classList.toggle('hidden', mode !== MODE_CARD);
+  if (documentGuideEl) documentGuideEl.classList.toggle('hidden', mode !== MODE_DOCUMENT);
+  if (receiptGuideEl) receiptGuideEl.classList.toggle('hidden', mode !== MODE_RECEIPT);
 
-  updateGuideButtons(mode);
+  if (receiptControl) receiptControl.classList.toggle('hidden', mode !== MODE_RECEIPT);
+
+  const active = 'px-3 py-1 rounded-full text-xs font-semibold bg-white text-black/80 shadow-md border-transparent';
+  const inactive = 'px-3 py-1 rounded-full text-xs font-semibold bg-white/20 text-white/80 border border-white/40 shadow-none';
+  if (cardModeBtn) cardModeBtn.className = mode === MODE_CARD ? active : inactive;
+  if (documentModeBtn) documentModeBtn.className = mode === MODE_DOCUMENT ? active : inactive;
+  if (receiptModeBtn) receiptModeBtn.className = mode === MODE_RECEIPT ? active : inactive;
+
+  // ガイド枠の座標キャッシュを更新
   updateGuideRectCache();
 }
 
@@ -264,10 +231,14 @@ function resizeOverlay() {
 }
 
 function updateGuideRectCache() {
-  const activeGuideEl = currentGuideMode === MODE_CARD ? cardGuideEl
-    : currentGuideMode === MODE_DOCUMENT ? documentGuideEl
-    : currentGuideMode === MODE_RECEIPT ? receiptGuideEl
-    : null;
+  let activeGuideEl = null;
+  if (currentGuideMode === MODE_CARD) {
+    activeGuideEl = cardGuideEl;
+  } else if (currentGuideMode === MODE_DOCUMENT) {
+    activeGuideEl = documentGuideEl;
+  } else if (currentGuideMode === MODE_RECEIPT) {
+    activeGuideEl = receiptGuideEl;
+  }
 
   if (!activeGuideEl || !overlayCanvas) {
     guideRectOnCanvas = null;
@@ -517,15 +488,20 @@ captureBtn.addEventListener('click', () => {
   if (autoCapturing) return;
   triggerCapture('manual');
 });
-cardModeBtn.addEventListener('click', () => {
-  setGuideMode(MODE_CARD);
-});
-documentModeBtn.addEventListener('click', () => {
-  setGuideMode(MODE_DOCUMENT);
-});
-receiptModeBtn.addEventListener('click', () => {
-  setGuideMode(MODE_RECEIPT);
-});
 
-setGuideMode(currentGuideMode);
+cardModeBtn.addEventListener('click', () => setMode(MODE_CARD));
+documentModeBtn.addEventListener('click', () => setMode(MODE_DOCUMENT));
+receiptModeBtn.addEventListener('click', () => setMode(MODE_RECEIPT));
+
+if (receiptRange && receiptGuideEl) {
+  receiptRange.addEventListener('input', (e) => {
+    const ratio = Number(e.target.value) || 2;
+    receiptGuideEl.style.setProperty('--receipt-ratio', ratio);
+  });
+
+  // 初期値を反映
+  receiptGuideEl.style.setProperty('--receipt-ratio', receiptRange.value || 2);
+}
+
+setMode(currentGuideMode);
 initCamera();
