@@ -393,7 +393,7 @@ function checkAutoCapture() {
       autoCapturing = true;
       console.log('auto capture triggered, IoU =', bestIoU, 'score =', bestPred.score);
 
-      triggerCapture('auto').finally(() => {
+      triggerCapture('auto', bestPred.bbox).finally(() => {
         autoCapturing = false;
         alignStartTime = null;
       });
@@ -401,14 +401,35 @@ function checkAutoCapture() {
   }
 }
 
-async function triggerCapture(mode = 'manual') {
+async function triggerCapture(mode = 'manual', cropBbox = null) {
   if (videoEl.readyState < videoEl.HAVE_CURRENT_DATA) return;
 
   showStatus(mode === 'auto' ? '自動撮影中...' : '撮影処理中...');
 
-  captureCanvas.width = videoEl.videoWidth;
-  captureCanvas.height = videoEl.videoHeight;
-  captureCtx.drawImage(videoEl, 0, 0);
+  const videoW = videoEl.videoWidth;
+  const videoH = videoEl.videoHeight;
+
+  if (mode === 'auto' && cropBbox) {
+    const [bx, by, bw, bh] = cropBbox;
+
+    const scaleX = videoW / CONFIG.inferenceSize;
+    const scaleY = videoH / CONFIG.inferenceSize;
+
+    const sx = Math.max(0, bx * scaleX);
+    const sy = Math.max(0, by * scaleY);
+    const sw = Math.min(videoW - sx, bw * scaleX);
+    const sh = Math.min(videoH - sy, bh * scaleY);
+
+    captureCanvas.width = sw;
+    captureCanvas.height = sh;
+
+    captureCtx.drawImage(videoEl, sx, sy, sw, sh, 0, 0, sw, sh);
+
+  } else {
+    captureCanvas.width = videoW;
+    captureCanvas.height = videoH;
+    captureCtx.drawImage(videoEl, 0, 0);
+  }
 
   const blob = await captureCanvas.convertToBlob({ type: 'image/jpeg', quality: 0.95 });
   const url = URL.createObjectURL(blob);
