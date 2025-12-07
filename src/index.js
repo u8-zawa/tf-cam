@@ -494,6 +494,8 @@ if (receiptRange && receiptGuideEl) {
   receiptRange.addEventListener('input', (e) => {
     const ratio = Number(e.target.value) || 2;
     receiptGuideEl.style.setProperty('--receipt-ratio', ratio);
+
+    updateGuideRectCache();
   });
 
   receiptGuideEl.style.setProperty('--receipt-ratio', receiptRange.value || 2);
