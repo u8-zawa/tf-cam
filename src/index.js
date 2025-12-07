@@ -6,6 +6,10 @@ const CONFIG = {
   targetWidth: 3840,
   targetHeight: 2160,
   detectionIntervalMs: 100,
+  model: {
+    url: `${import.meta.env.BASE_URL}model/1.tflite`,
+    preferredBackends: ['webgl', 'cpu']
+  },
   autoCapture: {
     enabled: true,
     minScore: 0.7,
@@ -25,9 +29,6 @@ const CONFIG = {
     defaultRatio: 2
   }
 };
-
-const TFLITE_MODEL_URL = `${import.meta.env.BASE_URL}model/1.tflite`;
-const PREFERRED_BACKENDS = ['webgl', 'cpu'];
 
 const videoEl = document.getElementById('preview-video');
 const statusEl = document.getElementById('status');
@@ -188,7 +189,7 @@ function rectIoU(a, b) {
 }
 
 async function initBackend() {
-  for (const name of PREFERRED_BACKENDS) {
+  for (const name of CONFIG.model.preferredBackends) {
     try {
       const ok = await tf.setBackend(name);
       if (!ok) {
@@ -203,16 +204,16 @@ async function initBackend() {
     }
   }
 
-  throw new Error(`利用可能な TensorFlow.js バックエンドがありません: ${PREFERRED_BACKENDS.join(', ')}`);
+  throw new Error(`利用可能な TensorFlow.js バックエンドがありません: ${CONFIG.model.preferredBackends.join(', ')}`);
 }
 
 async function loadTfliteModel() {
-  console.log('loading tflite model:', TFLITE_MODEL_URL);
+  console.log('loading tflite model:', CONFIG.model.url);
 
   const backend = await initBackend();
   console.log('selected backend:', backend);
 
-  const net = await tflite.loadTFLiteModel(TFLITE_MODEL_URL);
+  const net = await tflite.loadTFLiteModel(CONFIG.model.url);
 
   tf.tidy(() => {
     const dummy = tf.ones(
