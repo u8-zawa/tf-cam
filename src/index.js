@@ -8,6 +8,7 @@ const CONFIG = {
 };
 
 const TFLITE_MODEL_URL = `${import.meta.env.BASE_URL}model/1.tflite`;
+const PREFERRED_BACKENDS = ['webgl', 'cpu'];
 
 const AUTO_CAPTURE_CONFIG = {
   enabled: true,
@@ -99,11 +100,30 @@ function rectIoU(a, b) {
   return union > 0 ? inter / union : 0;
 }
 
+async function initBackend() {
+  for (const name of PREFERRED_BACKENDS) {
+    try {
+      const ok = await tf.setBackend(name);
+      if (!ok) {
+        console.warn(`tf.setBackend(${name}) returned false`);
+        continue;
+      }
+      await tf.ready();
+      console.log(`✅ Using TF.js backend: ${name}`);
+      return name;
+    } catch (e) {
+      console.warn(`⚠️ Failed to init backend: ${name}`, e);
+    }
+  }
+
+  throw new Error(`利用可能な TensorFlow.js バックエンドがありません: ${PREFERRED_BACKENDS.join(', ')}`);
+}
+
 async function loadTfliteModel() {
   console.log('loading tflite model:', TFLITE_MODEL_URL);
 
-  await tf.setBackend('webgl');
-  await tf.ready();
+  const backend = await initBackend();
+  console.log('selected backend:', backend);
 
   const net = await tflite.loadTFLiteModel(TFLITE_MODEL_URL);
 
