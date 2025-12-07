@@ -12,6 +12,19 @@ export default defineConfig({
             compress: {
                 drop_console: true,
                 drop_debugger: true,
+
+                pure_getters: true,
+                passes: 3,
+                booleans: true,
+                conditionals: true,
+                dead_code: true,
+                unsafe_arrows: true,
+            },
+            mangle: {
+                toplevel: true,
+            },
+            format: {
+                comments: false,
             },
         },
     },
