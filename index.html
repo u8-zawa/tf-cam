@@ -4,10 +4,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>カメラテスト - 4K撮影と推論</title>
+    <title>tf-cam - カメラ</title>
     <link rel="preconnect" href="https://storage.googleapis.com" crossorigin>
     <link rel="dns-prefetch" href="https://storage.googleapis.com">
     <link href="/src/style.css" rel="stylesheet">
+    <style>
+        /* ガイドの外側を暗くするためのユーティリティ */
+        .guide-mask {
+            box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.6);
+        }
+    </style>
 </head>
 
 <body class="font-sans bg-[#222] text-white fixed inset-0 overflow-hidden">
@@ -15,20 +21,34 @@
     <!-- プレビュー用ビデオ -->
     <video id="preview-video" autoplay playsinline muted class="absolute inset-0 w-full h-full object-cover"></video>
 
+    <!-- 撮影ガイドレイヤー -->
+    <div class="absolute inset-0 flex items-center justify-center pointer-events-none z-10 p-4">
+        <!-- カード型ガイドフレーム -->
+        <div
+            class="relative w-full max-w-md aspect-[1/1.58] border-4 border-white/80 rounded-2xl guide-mask overflow-hidden">
+            <!-- テキストガイド -->
+            <div
+                class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-white/50 text-sm font-bold whitespace-nowrap rotate-90">
+                カードを枠に合わせてください
+            </div>
+        </div>
+    </div>
+
     <!-- ステータス表示 -->
-    <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2
-                bg-black/50 backdrop-blur-sm rounded-lg px-6 py-4 text-center">
-        <p id="status" class="text-lg font-semibold">初期化中...</p>
+    <div class="absolute top-[10%] left-1/2 -translate-x-1/2 w-full max-w-xs text-center z-20">
+        <div class="bg-black/60 backdrop-blur-md rounded-full px-6 py-2 border border-white/10 shadow-lg">
+            <p id="status" class="text-sm font-medium text-white">初期化中...</p>
+        </div>
     </div>
 
     <!-- シャッターボタン -->
     <button id="shutter-btn" class="absolute bottom-[3vh] left-1/2 -translate-x-1/2 
                    w-16 h-16 bg-white rounded-full border-4 border-gray-300
-                   hover:bg-gray-100 active:scale-95 transition-transform">
+                   hover:bg-gray-100 active:scale-95 transition-all z-20 shadow-xl">
     </button>
 
     <!-- 推論結果オーバーレイ用キャンバス -->
-    <canvas id="overlay-canvas" class="absolute pointer-events-none"></canvas>
+    <canvas id="overlay-canvas" class="absolute inset-0 pointer-events-none z-30"></canvas>
 
     <script type="module" src="/src/index.js"></script>
 </body>
