@@ -28,8 +28,7 @@
     <!-- 撮影ガイドレイヤー -->
     <div class="absolute inset-0 flex items-center justify-center pointer-events-none z-10 p-4">
         <!-- カード型ガイドフレーム -->
-        <div id="card-guide"
-            class="relative w-full max-w-xl aspect-[1/1.586] border-4 border-white/80 rounded-2xl guide-mask overflow-hidden">
+        <div id="card-guide" class="guide-frame guide-mask aspect-[1/1.586]">
             <div
                 class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-white/50 text-sm font-bold whitespace-nowrap rotate-90">
                 カードを枠に合わせてください
@@ -37,8 +36,7 @@
         </div>
 
         <!-- ドキュメント型ガイドフレーム -->
-        <div id="document-guide"
-            class="hidden relative w-full max-w-xl aspect-[1/1.414] border-4 border-white/80 rounded-2xl guide-mask overflow-hidden">
+        <div id="document-guide" class="hidden guide-frame guide-mask aspect-[1/1.414]">
             <div
                 class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-white/50 text-sm font-bold whitespace-nowrap">
                 ドキュメントを枠に合わせてください
