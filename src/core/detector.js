@@ -79,12 +79,10 @@ function runTfliteDetection(net, sourceCanvas) {
     const res = net.predict(input);
 
     const boxesTensor = res['TFLite_Detection_PostProcess'];
-    const classesTensor = res['TFLite_Detection_PostProcess:1'];
     const scoresTensor = res['TFLite_Detection_PostProcess:2'];
     const numTensor = res['TFLite_Detection_PostProcess:3'];
 
     const boxes = boxesTensor.dataSync();
-    const classes = classesTensor.dataSync();
     const scores = scoresTensor.dataSync();
     const numDetections = numTensor.dataSync()[0];
 
@@ -107,7 +105,6 @@ function runTfliteDetection(net, sourceCanvas) {
 
       preds.push({
         bbox: [x, y, w, h],
-        class: `cls_${classes[i]}`,
         score
       });
     }

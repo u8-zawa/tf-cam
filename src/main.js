@@ -151,8 +151,8 @@ function drawCornerMarkers(ctx, x, y, w, h, style) {
   ctx.stroke();
 }
 
-function drawLabel(ctx, boxX, boxY, cls, score, style) {
-  const text = `${cls} ${Math.round(score * 100)}%`;
+function drawLabel(ctx, boxX, boxY, score, style) {
+  const text = `${Math.round(score * 100)}%`;
   ctx.font = style.labelFont;
   const metrics = ctx.measureText(text);
   const textWidth = metrics.width;
@@ -190,7 +190,7 @@ function drawOverlay(predictions) {
   const scaleY = overlayCanvas.height / CONFIG.inferenceSize;
   const style = CONFIG.overlayStyle;
 
-  for (const { bbox, class: cls, score } of predictions) {
+  for (const { bbox, score } of predictions) {
     const [x, y, w, h] = bbox;
     const sx = x * scaleX;
     const sy = y * scaleY;
@@ -203,7 +203,7 @@ function drawOverlay(predictions) {
 
     drawCornerMarkers(ctx, sx, sy, sw, sh, style);
 
-    drawLabel(ctx, sx, sy, cls, score, style);
+    drawLabel(ctx, sx, sy, score, style);
   }
 }
 
