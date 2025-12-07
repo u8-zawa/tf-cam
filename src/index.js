@@ -7,7 +7,7 @@ const CONFIG = {
   targetHeight: 2160
 };
 
-const TFLITE_MODEL_URL = '/model/1.tflite';
+const TFLITE_MODEL_URL = `${import.meta.env.BASE_URL}model/1.tflite`;
 
 const AUTO_CAPTURE_CONFIG = {
   enabled: true,
