@@ -25,11 +25,21 @@
     <div class="absolute inset-0 flex items-center justify-center pointer-events-none z-10 p-4">
         <!-- カード型ガイドフレーム -->
         <div
-            class="relative w-full max-w-xl aspect-[1/1.58] border-4 border-white/80 rounded-2xl guide-mask overflow-hidden">
+            class="relative w-full max-w-xl aspect-[1/1.586] border-4 border-white/80 rounded-2xl guide-mask overflow-hidden">
             <!-- テキストガイド -->
             <div
                 class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-white/50 text-sm font-bold whitespace-nowrap rotate-90">
                 カードを枠に合わせてください
+            </div>
+        </div>
+
+        <!-- ドキュメント型ガイドフレーム -->
+        <div
+            class="hidden relative w-full max-w-xl aspect-[1/1.414] border-4 border-white/80 rounded-2xl guide-mask overflow-hidden">
+            <!-- テキストガイド -->
+            <div
+                class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-white/50 text-sm font-bold whitespace-nowrap">
+                ドキュメントを枠に合わせてください
             </div>
         </div>
     </div>
