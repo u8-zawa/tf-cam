@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite';
 import basicSsl from '@vitejs/plugin-basic-ssl';
-import tailwindcss from '@tailwindcss/vite'
+import tailwindcss from '@tailwindcss/vite';
+import { viteStaticCopy } from 'vite-plugin-static-copy';
 
 export default defineConfig({
     build: {
@@ -17,6 +18,14 @@ export default defineConfig({
     plugins: [
         basicSsl(),
         tailwindcss(),
+        viteStaticCopy({
+            targets: [
+                {
+                    src: 'node_modules/@tensorflow/tfjs-tflite/dist/tflite_web_api*',
+                    dest: './'
+                }
+            ]
+        }),
     ],
     server: {
         https: true, // プラグインで自己署名証明書を供給
