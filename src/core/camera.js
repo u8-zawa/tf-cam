@@ -88,9 +88,17 @@ export async function initCamera() {
     });
 
     videoEl.srcObject = stream;
+    const waitMetadata = new Promise((resolve) => {
+      if (
+        videoEl.readyState >= HTMLMediaElement.HAVE_METADATA &&
+        videoEl.videoWidth &&
+        videoEl.videoHeight
+      ) {
+        resolve();
+        return;
+      }
 
-    await new Promise((resolve) => {
-      videoEl.onloadedmetadata = () => {
+      const handler = () => {
         const track = stream.getVideoTracks()[0];
         const { width, height } = track.getSettings();
 
@@ -98,13 +106,22 @@ export async function initCamera() {
 
         videoAspect = (videoEl.videoWidth && videoEl.videoHeight)
           ? videoEl.videoWidth / videoEl.videoHeight
-          : (width / height);
+          : (width && height ? width / height : 1);
 
         resizeOverlay();
-        hideStatus();
+        videoEl.removeEventListener('loadedmetadata', handler);
         resolve();
       };
+
+      videoEl.addEventListener('loadedmetadata', handler, { once: true });
     });
+
+    const playPromise = videoEl.play().catch((err) => {
+      console.warn('video.play() に失敗しました:', err);
+    });
+
+    await Promise.all([waitMetadata, playPromise]);
+    hideStatus();
   } catch (err) {
     console.error('Error:', err);
     const message = err && err.message ? err.message : String(err);
